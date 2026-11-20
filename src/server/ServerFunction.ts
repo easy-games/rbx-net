@@ -22,7 +22,7 @@ export default class ServerFunction<
 		middlewares: MiddlewareOverload<CallbackArgs> = [],
 		private configuration: DefinitionConfiguration,
 	) {
-		super(middlewares);
+		super([...middlewares, ...(configuration.ServerGlobalMiddleware ?? [])]);
 		this.instance = findOrCreateRemote("RemoteFunction", name, instance => {
 			// Default listener
 			instance.OnServerInvoke = ServerFunction.DefaultFunctionHook;

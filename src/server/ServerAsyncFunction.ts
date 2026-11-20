@@ -78,7 +78,7 @@ class ServerAsyncFunction<
 	}
 
 	constructor(name: string, middlewares: MiddlewareList = [], private configuration: DefinitionConfiguration) {
-		super(middlewares);
+		super([...middlewares, ...(configuration.ServerGlobalMiddleware ?? [])]);
 		this.instance = findOrCreateRemote("AsyncRemoteFunction", name, instance => {
 			// Default connection
 			this.defaultHook = instance.OnServerEvent.Connect(ServerAsyncFunction.DefaultEventHook);
