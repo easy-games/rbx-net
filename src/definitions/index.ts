@@ -16,6 +16,7 @@ import {
 } from "./Types";
 import { ServerDefinitionBuilder } from "./ServerDefinitionBuilder";
 import { ClientDefinitionBuilder } from "./ClientDefinitionBuilder";
+import { HasServerGlobalMiddleware } from "../client/ClientCallResult";
 import { NamespaceBuilder, NamespaceConfiguration } from "./NamespaceBuilder";
 
 export interface DefinitionConfiguration {
@@ -68,13 +69,18 @@ namespace NetDefinitions {
 	 * @description https://docs.vorlias.com/rbx-net/docs/3.0/definitions#definitions-oh-my
 	 * @param declarations
 	 */
-	export function Create<T extends RemoteDeclarations>(declarations: T, configuration?: DefinitionConfiguration) {
-		configuration ??= {};
+	export function Create<T extends RemoteDeclarations, C extends DefinitionConfiguration = {}>(
+		declarations: T,
+		configuration?: C,
+	) {
+		const config: DefinitionConfiguration = configuration ?? {};
 
 		validateDeclarations(declarations);
-		return identity<DefinitionsCreateResult<T>>({
-			Server: new ServerDefinitionBuilder<T>(declarations, configuration),
-			Client: new ClientDefinitionBuilder<T>(declarations, configuration),
+		// With ServerGlobalMiddleware, a call can be dropped on the server, so client function results are typed
+		// `R | undefined` (see ClientCallResult)
+		return identity<DefinitionsCreateResult<T, HasServerGlobalMiddleware<C>>>({
+			Server: new ServerDefinitionBuilder<T>(declarations, config),
+			Client: new ClientDefinitionBuilder<T, HasServerGlobalMiddleware<C>>(declarations, config),
 		});
 	}
 
@@ -107,6 +113,15 @@ namespace NetDefinitions {
 	 * ... (asynchronously) ...
 	 * `Server` [`Responds to Call`] -> `Client` [`Recieves Response`]
 	 */
+	export function ServerAsyncFunction<
+		ServerFunction extends (...args: any[]) => unknown = (...args: unknown[]) => unknown
+	>(mw?: []): AsyncServerFunctionDeclaration<Parameters<ServerFunction>, ReturnType<ServerFunction>>;
+	/** With its own middleware, which may drop calls, so client results are typed `R | undefined` */
+	export function ServerAsyncFunction<
+		ServerFunction extends (...args: any[]) => unknown = (...args: unknown[]) => unknown
+	>(
+		mw: MiddlewareOverload<Parameters<ServerFunction>>,
+	): AsyncServerFunctionDeclaration<Parameters<ServerFunction>, ReturnType<ServerFunction>, true>;
 	export function ServerAsyncFunction<
 		ServerFunction extends (...args: any[]) => unknown = (...args: unknown[]) => unknown
 	>(mw?: MiddlewareOverload<Parameters<ServerFunction>>) {
@@ -177,6 +192,13 @@ namespace NetDefinitions {
 	 *
 	 * (Synchronous) `Client` [`Calls`, `Recieves Response`] <- (yields for response) -> `Server` [`Recieves Call`, `Responds`]
 	 */
+	export function ServerFunction<ServerFunction extends (...args: any[]) => any>(
+		mw?: [],
+	): FunctionDeclaration<Parameters<ServerFunction>, ReturnType<ServerFunction>>;
+	/** With its own middleware, which may drop calls, so client results are typed `R | undefined` */
+	export function ServerFunction<ServerFunction extends (...args: any[]) => any>(
+		mw: MiddlewareOverload<Parameters<ServerFunction>>,
+	): FunctionDeclaration<Parameters<ServerFunction>, ReturnType<ServerFunction>, true>;
 	export function ServerFunction<ServerFunction extends (...args: any[]) => any>(
 		mw?: MiddlewareOverload<Parameters<ServerFunction>>,
 	) {

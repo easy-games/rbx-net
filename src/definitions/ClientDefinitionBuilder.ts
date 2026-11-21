@@ -19,10 +19,14 @@ import {
 } from "./Types";
 
 // Keep the declarations fully isolated
-const declarationMap = new WeakMap<ClientDefinitionBuilder<RemoteDeclarations>, RemoteDeclarations>();
-const shouldYield = new WeakMap<ClientDefinitionBuilder<RemoteDeclarations>, boolean>();
+const declarationMap = new WeakMap<object, RemoteDeclarations>();
+const shouldYield = new WeakMap<object, boolean>();
 
-export class ClientDefinitionBuilder<T extends RemoteDeclarations> {
+/**
+ * `HasMiddleware` is true when the definitions were created with `ServerGlobalMiddleware`, so function results are typed
+ * `R | undefined` (see ClientCallResult). Namespaces inherit it.
+ */
+export class ClientDefinitionBuilder<T extends RemoteDeclarations, HasMiddleware extends boolean = false> {
 	public constructor(
 		declarations: T,
 		private configuration?: DefinitionConfiguration,
@@ -48,7 +52,7 @@ export class ClientDefinitionBuilder<T extends RemoteDeclarations> {
 	 *
 	 * @see {@link OnEvent}, {@link OnFunction} for nicer functional alternatives to grabbing remotes.
 	 */
-	Get<K extends keyof FilterClientDeclarations<T> & string>(remoteId: K): InferClientRemote<T[K]> {
+	Get<K extends keyof FilterClientDeclarations<T> & string>(remoteId: K): InferClientRemote<T[K], HasMiddleware> {
 		if (shouldYield.get(this)) {
 			return this.WaitFor(remoteId).expect();
 		} else {
@@ -62,17 +66,19 @@ export class ClientDefinitionBuilder<T extends RemoteDeclarations> {
 	 */
 	GetNamespace<K extends keyof FilterGroups<T> & string>(
 		namespaceId: K,
-	): ClientDefinitionBuilder<InferDefinition<T[K]>> {
+	): ClientDefinitionBuilder<InferDefinition<T[K]>, HasMiddleware> {
 		const group = declarationMap.get(this)![namespaceId] as NamespaceDeclaration<RemoteDeclarations>;
 		assert(group, `Group ${namespaceId} does not exist under namespace ${this.namespace}`);
 		assert(group.Type === "Namespace");
-		return group.Definitions._BuildClientDefinition(
+		return group.Definitions._BuildClientDefinition<HasMiddleware>(
 			group.Definitions._CombineConfigurations(this.configuration ?? {}),
 			this.namespace !== NAMESPACE_ROOT ? [this.namespace, namespaceId].join(NAMESPACE_SEPARATOR) : namespaceId,
 		);
 	}
 
-	private GetOrThrow<K extends keyof FilterClientDeclarations<T> & string>(remoteId: K): InferClientRemote<T[K]> {
+	private GetOrThrow<K extends keyof FilterClientDeclarations<T> & string>(
+		remoteId: K,
+	): InferClientRemote<T[K], HasMiddleware> {
 		const item = declarationMap.get(this)![remoteId];
 		remoteId =
 			this.namespace !== NAMESPACE_ROOT ? ([this.namespace, remoteId].join(NAMESPACE_SEPARATOR) as K) : remoteId;
@@ -84,13 +90,13 @@ export class ClientDefinitionBuilder<T extends RemoteDeclarations> {
 		const config = this.configuration ?? {};
 
 		if (item.Type === "Function") {
-			return new ClientFunction(remoteId, config) as InferClientRemote<T[K]>;
+			return new ClientFunction(remoteId, config) as InferClientRemote<T[K], HasMiddleware>;
 		} else if (item.Type === "Event") {
-			return new ClientEvent(remoteId, config) as InferClientRemote<T[K]>;
+			return new ClientEvent(remoteId, config) as InferClientRemote<T[K], HasMiddleware>;
 		} else if (item.Type === "AsyncFunction") {
-			return new ClientAsyncFunction(remoteId, config) as InferClientRemote<T[K]>;
+			return new ClientAsyncFunction(remoteId, config) as InferClientRemote<T[K], HasMiddleware>;
 		} else if (item.Type === "ExperienceEvent") {
-			return new ClientEvent(getGlobalRemote(remoteId), config) as InferClientRemote<T[K]>;
+			return new ClientEvent(getGlobalRemote(remoteId), config) as InferClientRemote<T[K], HasMiddleware>;
 		}
 
 		throw `Type '${item.Type}' is not a valid client remote object type`;
@@ -104,7 +110,9 @@ export class ClientDefinitionBuilder<T extends RemoteDeclarations> {
 	 * @see {@link OnEvent}, {@link OnFunction} for nicer functional alternatives to grabbing remotes.
 	 */
 
-	async WaitFor<K extends keyof FilterClientDeclarations<T> & string>(remoteId: K): Promise<InferClientRemote<T[K]>> {
+	async WaitFor<K extends keyof FilterClientDeclarations<T> & string>(
+		remoteId: K,
+	): Promise<InferClientRemote<T[K], HasMiddleware>> {
 		const item = declarationMap.get(this)![remoteId];
 		remoteId =
 			this.namespace !== NAMESPACE_ROOT ? ([this.namespace, remoteId].join(NAMESPACE_SEPARATOR) as K) : remoteId;
@@ -116,13 +124,13 @@ export class ClientDefinitionBuilder<T extends RemoteDeclarations> {
 		const config = this.configuration ?? {};
 
 		if (item.Type === "Function") {
-			return ClientFunction.Wait(remoteId, config) as Promise<InferClientRemote<T[K]>>;
+			return ClientFunction.Wait(remoteId, config) as Promise<InferClientRemote<T[K], HasMiddleware>>;
 		} else if (item.Type === "Event") {
-			return ClientEvent.Wait(remoteId, config) as Promise<InferClientRemote<T[K]>>;
+			return ClientEvent.Wait(remoteId, config) as Promise<InferClientRemote<T[K], HasMiddleware>>;
 		} else if (item.Type === "AsyncFunction") {
-			return ClientAsyncFunction.Wait(remoteId, config) as Promise<InferClientRemote<T[K]>>;
+			return ClientAsyncFunction.Wait(remoteId, config) as Promise<InferClientRemote<T[K], HasMiddleware>>;
 		} else if (item.Type === "ExperienceEvent") {
-			return ClientEvent.Wait(getGlobalRemote(remoteId), config) as Promise<InferClientRemote<T[K]>>;
+			return ClientEvent.Wait(getGlobalRemote(remoteId), config) as Promise<InferClientRemote<T[K], HasMiddleware>>;
 		}
 
 		throw `Type '${item.Type}' is not a valid client remote object type`;

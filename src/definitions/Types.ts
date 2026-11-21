@@ -7,6 +7,7 @@ import { oneOf } from "../internal/validator";
 import ClientAsyncFunction, { ClientAsyncCallback, ClientAsyncCaller } from "../client/ClientAsyncFunction";
 import ClientEvent, { ClientListenerEvent, ClientSenderEvent } from "../client/ClientEvent";
 import ClientFunction from "../client/ClientFunction";
+import { HasAnyMiddleware } from "../client/ClientCallResult";
 import { MiddlewareOverload } from "../middleware";
 import ServerAsyncFunction, { ServerAsyncCallback, ServerAsyncCaller } from "../server/ServerAsyncFunction";
 import ServerEvent, { ServerListenerEvent, ServerSenderEvent } from "../server/ServerEvent";
@@ -75,8 +76,16 @@ export interface AsyncFunctionDeclarationLike {
 	readonly ServerMiddleware?: [...mw: MiddlewareOverload<any>];
 }
 
-export interface FunctionDeclaration<T extends readonly unknown[], R extends unknown = undefined>
-	extends FunctionDeclarationLike {
+/**
+ * `HasOwnMiddleware` is true when the remote was declared with its own server middleware
+ * (e.g. `ServerFunction<...>([Net.Middleware.RateLimit(...)])`), which may drop calls, so client results are typed
+ * `R | undefined`.
+ */
+export interface FunctionDeclaration<
+	T extends readonly unknown[],
+	R extends unknown = undefined,
+	_HasOwnMiddleware extends boolean = false
+> extends FunctionDeclarationLike {
 	/** @deprecated */
 	readonly _nominal_FunctionDeclaration: unique symbol;
 }
@@ -84,7 +93,7 @@ export interface FunctionDeclaration<T extends readonly unknown[], R extends unk
 /**
  * The DefinitionBuilders type
  */
-export interface DefinitionsCreateResult<T extends RemoteDeclarations> {
+export interface DefinitionsCreateResult<T extends RemoteDeclarations, HasMiddleware extends boolean = false> {
 	/**
 	 * The server namespace for this definitions file, which allows manipulating remotes from the server
 	 * @server
@@ -95,7 +104,7 @@ export interface DefinitionsCreateResult<T extends RemoteDeclarations> {
 	 * The client namespace for this definitions file, which allows manipulating remotes from the client
 	 * @client
 	 */
-	readonly Client: ClientDefinitionBuilder<T>;
+	readonly Client: ClientDefinitionBuilder<T, HasMiddleware>;
 }
 
 export type InferGroupDeclaration<T> = T extends DeclarationNamespaceLike ? T["Definitions"] : {};
@@ -164,8 +173,12 @@ export interface AsyncClientFunctionDeclaration<_ClientArgs extends readonly unk
 /**
  * A declaration for an async server function
  */
-export interface AsyncServerFunctionDeclaration<_ServerArgs extends readonly unknown[], _ServerReturn>
-	extends AsyncFunctionDeclarationLike {
+export interface AsyncServerFunctionDeclaration<
+	_ServerArgs extends readonly unknown[],
+	_ServerReturn,
+	/** True when declared with its own server middleware, which may drop calls (client results `R | undefined`) */
+	_HasOwnMiddleware extends boolean = false
+> extends AsyncFunctionDeclarationLike {
 	/**
 	 * @deprecated
 	 */
@@ -280,12 +293,18 @@ export type InferServerCallback<T> = T extends LegacyAsyncFunctionDeclaration<in
 	: never;
 
 /**
- * This infers the client remote type based on the given value
+ * This infers the client remote type based on the given value.
+ *
+ * Function results are typed `R | undefined` when `HasMiddleware` (global middleware) is true or the remote has its own
+ * middleware (see ClientCallResult).
  */
-export type InferClientRemote<T> = T extends AsyncClientFunctionDeclaration<infer A, infer R>
+export type InferClientRemote<T, HasMiddleware extends boolean = false> = T extends AsyncClientFunctionDeclaration<
+	infer A,
+	infer R
+>
 	? ClientAsyncCallback<A, R>
-	: T extends AsyncServerFunctionDeclaration<infer A, infer R>
-	? ClientAsyncCaller<A, R>
+	: T extends AsyncServerFunctionDeclaration<infer A, infer R, infer M>
+	? ClientAsyncCaller<A, R, HasAnyMiddleware<HasMiddleware, M>>
 	: T extends ClientToServerEventDeclaration<infer A>
 	? ClientSenderEvent<A>
 	: T extends ServerToClientEventDeclaration<infer A>
@@ -295,9 +314,9 @@ export type InferClientRemote<T> = T extends AsyncClientFunctionDeclaration<infe
 	: T extends LegacyEventDeclaration<infer SA, infer CA>
 	? ClientEvent<CA, SA>
 	: T extends LegacyAsyncFunctionDeclaration<infer SA, infer SR, infer CA, infer CR>
-	? ClientAsyncFunction<CA, SA, CR, SR>
-	: T extends FunctionDeclaration<infer SA, infer SR>
-	? ClientFunction<SA, SR>
+	? ClientAsyncFunction<CA, SA, CR, SR, HasMiddleware>
+	: T extends FunctionDeclaration<infer SA, infer SR, infer M>
+	? ClientFunction<SA, SR, HasAnyMiddleware<HasMiddleware, M>>
 	: T extends ExperienceReplicatingEventDeclaration<infer A>
 	? ClientListenerEvent<A>
 	: never;

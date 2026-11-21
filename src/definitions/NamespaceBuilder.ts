@@ -48,9 +48,12 @@ export class NamespaceBuilder<N extends RemoteDeclarations> {
 	}
 
 	/** @internal */
-	_BuildClientDefinition(configuration: NamespaceConfiguration, namespace?: string): ClientDefinitionBuilder<N> {
+	_BuildClientDefinition<HasMiddleware extends boolean = false>(
+		configuration: NamespaceConfiguration,
+		namespace?: string,
+	): ClientDefinitionBuilder<N, HasMiddleware> {
 		assert(RunService.IsClient());
 		$print("Building client definition", declarationMap.get(this)!);
-		return new ClientDefinitionBuilder<N>(declarationMap.get(this) as N, configuration, namespace);
+		return new ClientDefinitionBuilder<N, HasMiddleware>(declarationMap.get(this) as N, configuration, namespace);
 	}
 }

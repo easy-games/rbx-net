@@ -1,6 +1,6 @@
 {
   "name": "@easy-games/net",
-  "version": "3.0.10-easy.1",
+  "version": "3.0.10-easy.2",
   "description": "",
   "main": "out/init.lua",
   "scripts": {

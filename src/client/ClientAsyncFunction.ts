@@ -1,5 +1,6 @@
 import { DefinitionConfiguration } from "../definitions";
 import { IAsyncListener, getRemoteOrThrow, IS_SERVER, waitForRemote, TagId } from "../internal";
+import { ClientCallResult } from "./ClientCallResult";
 
 const HttpService = game.GetService("HttpService");
 const RunService = game.GetService("RunService");
@@ -17,12 +18,19 @@ export interface ClientAsyncCallback<CallbackArgs extends readonly unknown[], Ca
 	SetCallback<R extends Promise<CallbackReturnType>>(callback: (...args: CallbackArgs) => R): void;
 }
 
-export interface ClientAsyncCaller<CallArgs extends readonly unknown[], CallReturnType> {
+export interface ClientAsyncCaller<
+	CallArgs extends readonly unknown[],
+	CallReturnType,
+	/** True when the remote has server middleware (global or its own), which may drop calls: results are typed `CallReturnType | undefined` */
+	HasMiddleware extends boolean = false
+> {
 	/**
 	 * Calls the server with the given arguments and returns the result from the server as a promise.
+	 *
+	 * Typed `CallReturnType | undefined` when the remote has server middleware, which may drop the call (see ClientCallResult).
 	 * @param args The arguments to the function
 	 */
-	CallServerAsync(...args: CallArgs): Promise<CallReturnType>;
+	CallServerAsync(...args: CallArgs): Promise<ClientCallResult<CallReturnType, HasMiddleware>>;
 
 	/**
 	 * Sets the call timeout for this caller. If the timeout is reached, the promise from the calling function will reject.
@@ -44,8 +52,13 @@ export default class ClientAsyncFunction<
 	CallbackArgs extends ReadonlyArray<unknown> = Array<unknown>,
 	CallArgs extends ReadonlyArray<unknown> = Array<unknown>,
 	CallReturnType = unknown,
-	CallbackReturnType = unknown
-> implements ClientAsyncCallback<CallbackArgs, CallbackReturnType>, ClientAsyncCaller<CallArgs, CallReturnType> {
+	CallbackReturnType = unknown,
+	HasMiddleware extends boolean = false
+>
+	implements
+		ClientAsyncCallback<CallbackArgs, CallbackReturnType>,
+		ClientAsyncCaller<CallArgs, CallReturnType, HasMiddleware>
+{
 	private instance: RemoteEvent;
 	private timeout = 60;
 	private connector: RBXScriptConnection | undefined;
@@ -108,7 +121,7 @@ export default class ClientAsyncFunction<
 		});
 	}
 
-	public async CallServerAsync(...args: CallArgs): Promise<CallReturnType> {
+	public async CallServerAsync(...args: CallArgs): Promise<ClientCallResult<CallReturnType, HasMiddleware>> {
 		if (CollectionService.HasTag(this.instance, TagId.DefaultFunctionListener)) {
 			throw `Attempted to call AsyncFunction '${this.name}' - which has no user defined callback`;
 		}
@@ -124,7 +137,7 @@ export default class ClientAsyncFunction<
 				if (typeIs(eventId, "string")) {
 					if (eventId === id) {
 						connection.Disconnect();
-						resolve(data as CallReturnType);
+						resolve(data as ClientCallResult<CallReturnType, HasMiddleware>);
 					}
 				}
 			});
